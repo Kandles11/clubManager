@@ -11,6 +11,7 @@ from django.utils import timezone
 
 from accounts.models import (
     AccountAlreadyExistsError,
+    RegistrationEmailError,
     DiscordAccountAlreadyLinkedError,
     RegistrationAlreadySentError,
     UserStub,
@@ -366,3 +367,31 @@ class RegistrationCompletionViewTests(RegistrationTestCase):
 
         self.assertEqual(response.status_code, 200)
         self.assertContains(response, "already")
+
+
+class RegistrationRequestViewTests(RegistrationTestCase):
+    def test_get_renders_registration_request_form(self):
+        response = self.client.get(reverse("registration_request"))
+        self.assertContains(response, "Email registration link")
+        self.assertContains(response, 'name="net_id"')
+
+    @patch("accounts.views.UserStub.notify")
+    def test_valid_request_creates_stub_and_sends_email(self, notify):
+        response = self.client.post(reverse("registration_request"), {"net_id": "abc123456"})
+        self.assertContains(response, "check your UTD email")
+        self.assertFalse(User.objects.filter(username="abc123456").exists())
+        user_stub = UserStub.objects.get(net_id="abc123456")
+        self.assertIsNone(user_stub.after_registration_redirect_destination)
+        notify.assert_called_once()
+
+    def test_invalid_net_id_does_not_create_stub(self):
+        response = self.client.post(reverse("registration_request"), {"net_id": "invalid"})
+        self.assertContains(response, "Invalid Net ID!")
+        self.assertFalse(UserStub.objects.exists())
+
+    @patch("accounts.views.UserStub.notify", side_effect=RegistrationEmailError)
+    def test_failed_email_drops_the_stub(self, _notify):
+        response = self.client.post(reverse("registration_request"), {"net_id": "abc123456"})
+
+        self.assertContains(response, "could not send")
+        self.assertFalse(UserStub.objects.exists())

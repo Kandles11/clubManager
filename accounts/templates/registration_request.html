@@ -1,0 +1,67 @@
+{% extends "publicBase.html" %}
+
+{% block title %}Create your account{% endblock %}
+
+{% block content %}
+<main class="main-content">
+    <div class="rsvp-container">
+        <div class="rsvp-card">
+            <div class="rsvp-header">
+                <div class="rsvp-icon"><i data-lucide="mail-plus"></i></div>
+                <h1 class="rsvp-title">Create your account</h1>
+                <p class="rsvp-description">Enter your UTD Net ID and we’ll email a link to finish registration.</p>
+            </div>
+
+            <div class="rsvp-form-container">
+                {% if success %}
+                <p class="message-success" role="status">{{ success }}</p>
+                {% elif error %}
+                <p class="error-message" role="alert">{{ error }}</p>
+                {% else %}
+                <form method="post" class="rsvp-form" id="registration-form">
+                    {% csrf_token %}
+                    <div class="form-field">
+                        {{ form.net_id.label_tag }}
+                        {{ form.net_id }}
+                        {% if form.net_id.errors %}
+                        <div class="error-message" id="net-id-error" role="alert">{{ form.net_id.errors.0 }}</div>
+                        {% endif %}
+                        <div class="help-text">For example, abc123456</div>
+                    </div>
+                    <button class="submit-button" type="submit">
+                        <i data-lucide="send"></i>
+                        Email registration link
+                    </button>
+                </form>
+                {% endif %}
+            </div>
+        </div>
+    </div>
+</main>
+
+<style>
+    .rsvp-container { align-items: flex-start; display: flex; justify-content: center; min-height: calc(100vh - 4rem); padding: 2rem 1rem; }
+    .rsvp-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); max-width: 500px; overflow: hidden; width: 100%; }
+    .rsvp-header { background: linear-gradient(135deg, var(--primary) 0%, color-mix(in hsl, var(--primary) 80%, black) 100%); color: #fff; padding: 2.5rem 2rem; text-align: center; }
+    .rsvp-icon { margin-bottom: 1rem; }
+    .rsvp-icon svg { height: 3rem; width: 3rem; }
+    .rsvp-title { font-size: 1.5rem; font-weight: 600; }
+    .rsvp-description { font-size: 0.875rem; }
+    .rsvp-form-container { padding: 2rem; }
+    .rsvp-form, .form-field { display: flex; flex-direction: column; gap: 0.5rem; }
+    .form-field input { border: 2px solid #e5e7eb; border-radius: 0.5rem; padding: 0.75rem; }
+    .submit-button { background: var(--primary); border: 0; border-radius: 0.5rem; color: #fff; margin-top: 1.5rem; padding: 1rem; width: 100%; }
+    .error-message { color: var(--primary); }
+    .message-success { color: #166534; }
+    @media (max-width: 640px) { .rsvp-container { padding: 1rem; } .rsvp-header, .rsvp-form-container { padding: 1.5rem; } }
+</style>
+
+<script>
+    document.getElementById("registration-form")?.addEventListener("submit", (event) => {
+        event.currentTarget.querySelector("button").disabled = true;
+    });
+    {% if form.net_id.errors %}
+    document.getElementById("id_net_id")?.focus();
+    {% endif %}
+</script>
+{% endblock %}

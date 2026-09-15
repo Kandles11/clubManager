@@ -1,0 +1,77 @@
+{% extends "publicBase.html" %}
+
+{% block title %}Create your account{% endblock %}
+
+{% block content %}
+<main class="main-content">
+    <div class="rsvp-container">
+        <div class="rsvp-card">
+            <div class="rsvp-header">
+                <div class="rsvp-icon"><i data-lucide="user-round-plus"></i></div>
+                <h1 class="rsvp-title">Create your account</h1>
+                <p class="rsvp-description">
+                    Choose your name and password to finish creating your{% if settings %} {{ settings.organization_name }}{% endif %} account.
+                </p>
+            </div>
+
+            <div class="rsvp-form-container">
+                <form method="post" class="rsvp-form">
+                    {% csrf_token %}
+                    {{ form.non_field_errors }}
+                    <div class="form-fields">
+                        <div class="form-row">
+                            {% for field in form %}
+                            {% if field.name == "first_name" or field.name == "last_name" %}
+                            <div class="form-field">
+                                {{ field.label_tag }}
+                                {{ field }}
+                                {% if field.errors %}<div class="error-message">{{ field.errors.0 }}</div>{% endif %}
+                            </div>
+                            {% endif %}
+                            {% endfor %}
+                        </div>
+
+                        {% for field in form %}
+                        {% if field.name == "new_password1" or field.name == "new_password2" %}
+                        <div class="form-field">
+                            {{ field.label_tag }}
+                            {{ field }}
+                            {% if field.errors %}<div class="error-message">{{ field.errors.0 }}</div>{% endif %}
+                            {% if field.help_text %}<div class="help-text">{{ field.help_text }}</div>{% endif %}
+                        </div>
+                        {% endif %}
+                        {% endfor %}
+                    </div>
+                    <button class="submit-button" type="submit"><i data-lucide="check"></i>Create account</button>
+                </form>
+            </div>
+        </div>
+    </div>
+</main>
+
+<style>
+    .rsvp-container { align-items: flex-start; display: flex; justify-content: center; min-height: calc(100vh - 4rem); padding: 2rem 1rem; }
+    .rsvp-card { background: #fff; border: 1px solid #e5e7eb; border-radius: 1rem; box-shadow: 0 10px 25px rgba(0, 0, 0, 0.1); max-width: 500px; overflow: hidden; width: 100%; }
+    .rsvp-header { background: linear-gradient(135deg, var(--primary) 0%, color-mix(in hsl, var(--primary) 80%, black) 100%); color: #fff; padding: 2.5rem 2rem; text-align: center; }
+    .rsvp-icon { display: flex; justify-content: center; margin-bottom: 1rem; }
+    .rsvp-icon svg { height: 3rem; opacity: 0.9; width: 3rem; }
+    .rsvp-title { font-size: 1.5rem; font-weight: 600; margin-bottom: 0.5rem; }
+    .rsvp-description { font-size: 0.875rem; line-height: 1.5; opacity: 0.85; }
+    .rsvp-form-container { padding: 2rem; }
+    .rsvp-form, .form-fields, .form-field { display: flex; flex-direction: column; }
+    .rsvp-form, .form-fields { gap: 1.5rem; }
+    .form-row { display: grid; gap: 1rem; grid-template-columns: 1fr 1fr; }
+    .form-field { gap: 0.5rem; }
+    .form-field label { color: #374151; font-size: 0.875rem; font-weight: 500; }
+    .form-field input { background: #fff; border: 2px solid #e5e7eb; border-radius: 0.5rem; font-size: 1rem; padding: 0.75rem; transition: all 0.2s ease; }
+    .form-field input:focus { border-color: var(--primary); box-shadow: 0 0 0 3px rgba(191, 30, 46, 0.1); outline: none; transform: translateY(-1px); }
+    .form-field input:hover { border-color: #d1d5db; }
+    .help-text { color: #6b7280; font-size: 0.75rem; }
+    .error-message { color: var(--primary); font-size: 0.75rem; font-weight: 500; }
+    .submit-button { align-items: center; background: var(--primary); border: none; border-radius: 0.5rem; color: #fff; cursor: pointer; display: flex; font-size: 1rem; font-weight: 600; gap: 0.5rem; justify-content: center; padding: 1rem 2rem; transition: all 0.2s ease; }
+    .submit-button:hover { background: color-mix(in hsl, var(--primary) 90%, black); box-shadow: 0 4px 12px rgba(191, 30, 46, 0.3); transform: translateY(-2px); }
+    .submit-button:active { transform: translateY(0); }
+    .submit-button svg { height: 1.25rem; width: 1.25rem; }
+    @media (max-width: 640px) { .rsvp-container { padding: 1rem; } .rsvp-header, .rsvp-form-container { padding: 1.5rem; } .form-row { grid-template-columns: 1fr; } }
+</style>
+{% endblock %}

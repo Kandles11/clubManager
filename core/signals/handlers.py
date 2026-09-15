@@ -5,7 +5,7 @@ from clubManager import settings
 
 from common.major import get_major_from_netid
 from core.models import UserProfile
-from payments.models import PurchasedProduct
+from payments.models import PurchasedProduct, Term
 
 import aiohttp
 from asgiref.sync import sync_to_async
@@ -34,7 +34,10 @@ async def update_roles_profile_signal(sender, instance: UserProfile, created, **
     def is_member():
         if not (discord_id := instance.discord_id):
             return False, None
-        return instance.is_member()[1] is not None, discord_id
+        current_term = Term.get_current_term()
+        if current_term is None:
+            return False, None
+        return instance.is_member(current_term)[1] is not None, discord_id
 
     valid, discord_id = await sync_to_async(is_member)()
     if valid:

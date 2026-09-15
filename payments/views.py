@@ -1,5 +1,8 @@
+from operator import ne
+
 from django.shortcuts import render, get_object_or_404, redirect
 
+from accounts.models import UserStub
 from core.models import UserProfile
 from .forms import PaymentSignInForm
 import configparser
@@ -91,13 +94,18 @@ class ChooseUserView(View):
             try:
                 user = User.objects.get(username=username)
             except User.DoesNotExist:
+                try:
+                    UserStub.create(net_id=username, after_registration_redirect_destination=request.get_full_path())
+                    message = "Check your UT Dallas email address for an email from us with a link to get registered and finish this payment!"
+                except:
+                    message = "We couldn't find your user in our system. Please ask an officer for further assistance!"
                 return render(
                     request,
                     self.template_name,
                     {
                         **layout_data,
                         "form": form,
-                        "message": "User not found",
+                        "message": message,
                         "product_name": product.name,
                     },
                 )

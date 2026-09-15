@@ -1,7 +1,12 @@
+from django.contrib.auth import login
+from django.db import transaction
+from django.http import Http404
 from django.shortcuts import render, redirect, get_object_or_404
+from django.utils import timezone
 from django.views import View
-from .models import AccountLink
-from core.models import UserProfile
+from .models import AccountAlreadyExistsError, AccountLink, DiscordAccountAlreadyLinkedError, UserStub
+from .forms import RegistrationCompletionForm
+from core.models import ServerSettings, UserProfile
 from clubManager import settings
 from core.utilities import get_layout_data
 import requests
@@ -58,6 +63,56 @@ class LinkSuccessView(View):
     def get(self, request):
         layout_data = get_layout_data(request)
         return render(request, self.template_name, {**layout_data})
+
+
+class RegistrationCompleteView(View):
+    template_name = "registration_complete.html"
+
+    @staticmethod
+    def get_user_stub(user_registration_key, *, lock=False):
+        user_stubs = UserStub.objects.filter(pk=user_registration_key, expires_at__gt=timezone.now())
+        if lock:
+            user_stubs = user_stubs.select_for_update()
+        user_stub = user_stubs.first()
+        if user_stub is None:
+            raise Http404("This registration link is invalid or has expired.")
+        return user_stub
+
+    def get(self, request, user_registration_key):
+        user_stub = self.get_user_stub(user_registration_key)
+        return render(
+            request,
+            self.template_name,
+            {"form": RegistrationCompletionForm(user_stub.build_user()), "settings": ServerSettings.objects.first()},
+        )
+
+    def post(self, request, user_registration_key):
+        activated = False
+        with transaction.atomic():
+            user_stub = self.get_user_stub(user_registration_key, lock=True)
+            # An unsaved User for the form to fill in. activate() is what actually creates
+            # the account, so a submission that fails here leaves nothing behind.
+            form = RegistrationCompletionForm(user_stub.build_user(), request.POST)
+            if form.is_valid():
+                user = form.save(commit=False)
+                try:
+                    redirect_destination = user_stub.activate(user)
+                    activated = True
+                except AccountAlreadyExistsError:
+                    form.add_error(None, "An account for this Net ID already exists. Try signing in instead.")
+                except DiscordAccountAlreadyLinkedError:
+                    form.add_error(
+                        None, "That Discord account is already linked to another account. Contact an officer."
+                    )
+
+        if not activated:
+            return render(
+                request,
+                self.template_name,
+                {"form": form, "settings": ServerSettings.objects.first()},
+            )
+        login(request, user)
+        return redirect(redirect_destination or "profile")
 
 
 class DiscordUser(TypedDict):

@@ -1,11 +1,12 @@
 from datetime import timedelta
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 from django.contrib.auth.models import User
 from django.core.exceptions import ValidationError
 from django.core import mail
 from django.core.management import call_command
 from django.test import TestCase
+from django.urls import reverse
 from django.utils import timezone
 
 from accounts.models import (
@@ -26,7 +27,8 @@ class RegistrationTestCase(TestCase):
     Saving a `UserProfile` that has a `discord_id` fires the member-role signal, which
     needs a current `Term` to resolve membership and would otherwise call out to the bot
     API. Give it a real Term and stub the outbound call so these tests exercise the
-    actual signal path.
+    actual signal path. Creating a `User` also kicks off a NetID -> major directory
+    lookup, which has no business making a real request here.
     """
 
     def setUp(self):
@@ -39,13 +41,16 @@ class RegistrationTestCase(TestCase):
             end_date=today + timedelta(days=30),
             product=product,
         )
-        add_member_role = patch("core.signals.handlers.add_member_role", new=AsyncMock(return_value=True))
-        add_member_role.start()
-        self.addCleanup(add_member_role.stop)
+        for target, replacement in (
+            ("core.signals.handlers.add_member_role", AsyncMock(return_value=True)),
+            ("core.signals.handlers.get_major_from_netid", MagicMock(return_value=None)),
+        ):
+            patcher = patch(target, new=replacement)
+            patcher.start()
+            self.addCleanup(patcher.stop)
 
     def create_user(self, username):
-        with patch("core.signals.handlers.get_major_from_netid", return_value=None):
-            return User.objects.create(username=username)
+        return User.objects.create(username=username)
 
 
 class UserStubRedirectDestinationTests(RegistrationTestCase):
@@ -132,8 +137,7 @@ class UserStubActivateTests(RegistrationTestCase):
         user.first_name = "Comet"
         user.last_name = "Robotics"
         user.set_password(password)
-        with patch("core.signals.handlers.get_major_from_netid", return_value=None):
-            return user_stub.activate(user)
+        return user_stub.activate(user)
 
     def test_build_user_writes_nothing(self):
         user_stub = UserStub.create("abc123456", None)
@@ -288,3 +292,77 @@ class UserStubNotifyTests(RegistrationTestCase):
         user_stub = UserStub.create("abc123456", None)
 
         self.assertEqual(user_stub.email_address(), "abc123456@utdallas.edu")
+
+
+class RegistrationCompletionViewTests(RegistrationTestCase):
+    def complete(self, user_stub, **overrides):
+        payload = {
+            "first_name": "Ada",
+            "last_name": "Lovelace",
+            "new_password1": "correct-horse-battery-staple",
+            "new_password2": "correct-horse-battery-staple",
+        }
+        payload.update(overrides)
+        return self.client.post(reverse("registration_complete", args=[user_stub.user_registration_key]), payload)
+
+    def test_valid_registration_creates_the_account_and_redirects(self):
+        user_stub = UserStub.create("registrationuser", "/payments/")
+
+        response = self.complete(user_stub)
+
+        self.assertRedirects(response, "/payments/", fetch_redirect_response=False)
+        user = User.objects.get(username="registrationuser")
+        self.assertTrue(user.is_active)
+        self.assertTrue(user.check_password("correct-horse-battery-staple"))
+        self.assertEqual(user.first_name, "Ada")
+        self.assertEqual(user.last_name, "Lovelace")
+        self.assertFalse(UserStub.objects.filter(pk=user_stub.pk).exists())
+        self.assertEqual(self.client.session["_auth_user_id"], str(user.pk))
+
+    def test_invalid_password_keeps_the_stub_and_creates_no_account(self):
+        user_stub = UserStub.create("invalidregistration", "")
+
+        response = self.complete(user_stub, new_password2="not-the-same-password")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(User.objects.filter(username="invalidregistration").exists())
+        self.assertTrue(UserStub.objects.filter(pk=user_stub.pk).exists())
+        self.assertContains(response, "The two password fields didn\u2019t match.")
+
+    def test_missing_name_keeps_the_stub_and_creates_no_account(self):
+        user_stub = UserStub.create("missingname", "")
+
+        response = self.complete(user_stub, last_name="")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertFalse(User.objects.filter(username="missingname").exists())
+        self.assertTrue(UserStub.objects.filter(pk=user_stub.pk).exists())
+        self.assertContains(response, "This field is required.")
+
+    def test_expired_registration_key_returns_not_found(self):
+        user_stub = UserStub.create("expiredregistration", "")
+        user_stub.expires_at = timezone.now()
+        user_stub.save(update_fields=["expires_at"])
+
+        response = self.client.get(reverse("registration_complete", args=[user_stub.user_registration_key]))
+
+        self.assertEqual(response.status_code, 404)
+        self.assertFalse(User.objects.filter(username="expiredregistration").exists())
+        self.assertTrue(UserStub.objects.filter(pk=user_stub.pk).exists())
+
+    def test_valid_registration_without_destination_redirects_to_profile(self):
+        user_stub = UserStub.create("profiledestination", "")
+
+        response = self.complete(user_stub)
+
+        self.assertRedirects(response, reverse("profile"))
+
+    def test_net_id_claimed_while_the_form_was_open_is_reported(self):
+        """activate() raises AccountAlreadyExistsError here; the view must not 500."""
+        user_stub = UserStub.create("racedregistration", "")
+        self.create_user("racedregistration")
+
+        response = self.complete(user_stub)
+
+        self.assertEqual(response.status_code, 200)
+        self.assertContains(response, "already")

@@ -95,10 +95,10 @@ class ChooseUserView(View):
                 user = User.objects.get(username=username)
             except User.DoesNotExist:
                 try:
-                  UserStub.create(net_id=username, after_registration_redirect_destination=request.get_full_path())
-                  message = "Check your UT Dallas email address for an email from us with a link to get registered and finish this payment!"
+                    UserStub.create(net_id=username, after_registration_redirect_destination=request.get_full_path())
+                    message = "Check your UT Dallas email address for an email from us with a link to get registered and finish this payment!"
                 except:
-                  message = "We couldn't find your user in our system. Please ask an officer for further assistance!"
+                    message = "We couldn't find your user in our system. Please ask an officer for further assistance!"
                 return render(
                     request,
                     self.template_name,

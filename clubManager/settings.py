@@ -303,5 +303,9 @@ FEATURE_FLAGS = resolve_feature_flags(
         # disabled: transactional emails use HTML strings that are inlined in sending code
         # - @jasonappah, 09/10/2026 - default off
         "NEW_TRANSACTIONAL_EMAIL_TEMPLATES": False,
+        # enabled: /link can initiate account registration for an unknown Net ID
+        # disabled: /link asks the user to contact an officer, preserving its original behavior
+        # - @jasonappah, 09/05/2026 - default off until the Discord registration flow is tested on Comet Robotics prod + ready for wider deployment
+        "DISCORD_ACCOUNT_REGISTRATION": False,
     }
 )

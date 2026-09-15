@@ -17,7 +17,14 @@ from django.core.mail import send_mail
 
 from core.emails import send_templated_email
 
-from accounts.models import AccountLink
+from accounts.models import (
+    AccountAlreadyExistsError,
+    AccountLink,
+    DiscordAccountAlreadyLinkedError,
+    RegistrationAlreadySentError,
+    RegistrationEmailError,
+    UserStub,
+)
 from core.models import ServerSettings, User, UserProfile
 from common.asyncutils import *
 from common.utils import is_valid_net_id
@@ -193,6 +200,86 @@ async def get_current_member_discord_ids():
 # -------- Bot commands --------
 
 
+class AccountCreationView(discord.ui.View):
+    def __init__(self, net_id: str, discord_user_id: int) -> None:
+        super().__init__(timeout=300)
+        self.net_id = net_id
+        self.discord_user_id = str(discord_user_id)
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        if interaction.user is not None and str(interaction.user.id) == self.discord_user_id:
+            return True
+
+        await interaction.response.send_message(
+            "Only the person who requested this account can confirm its creation.", ephemeral=True
+        )
+        return False
+
+    @discord.ui.button(label="Yes, create my account", style=discord.ButtonStyle.primary)
+    async def confirm_account_creation(self, button, interaction: discord.Interaction):
+        await interaction.response.edit_message(
+            content="Creating your account and sending the registration email...", view=None
+        )
+
+        try:
+            user_stub = await sync_to_async(UserStub.create)(
+                net_id=self.net_id,
+                after_registration_redirect_destination="",
+                discord_user_id=self.discord_user_id,
+            )
+        except RegistrationAlreadySentError:
+            await interaction.edit_original_response(
+                content=(
+                    "Oh, looks like we've already sent you a registration email recently. Please check your email."
+                ),
+                view=None,
+            )
+            return
+        except AccountAlreadyExistsError:
+            await interaction.edit_original_response(
+                content="There's already an account with this Net ID in the system.", view=None
+            )
+            return
+        except DiscordAccountAlreadyLinkedError:
+            await interaction.edit_original_response(
+                content=(
+                    f"Your Discord account is already linked to a {ORG_NAME} account. "
+                    "Ping an officer if this looks wrong."
+                ),
+                view=None,
+            )
+            return
+        except Exception:
+            logger.exception("Unable to create account registration for Net ID %s", self.net_id)
+            await interaction.edit_original_response(
+                content="We couldn't start your account registration. Please try again or contact an officer.",
+                view=None,
+            )
+            return
+
+        try:
+            await sync_to_async(UserStub.notify)(user_stub)
+        except RegistrationEmailError:
+            logger.exception("Unable to send registration email for Net ID %s", self.net_id)
+            try:
+                await sync_to_async(user_stub.delete)()
+            except Exception:
+                logger.exception("Unable to clean up failed registration for Net ID %s", self.net_id)
+            await interaction.edit_original_response(
+                content="We failed to send your registration email. Please try again in a few minutes.", view=None
+            )
+            return
+
+        email = f"{self.net_id}@utdallas.edu"
+        await interaction.edit_original_response(
+            content=(
+                f"Registration email sent to `{email}`. Check your inbox and follow the link to finish creating "
+                f"your {ORG_NAME} account."
+            ),
+            view=None,
+        )
+
+
 @bot.event
 async def on_ready():
     print(f"{bot.user} is ready and online!")
@@ -215,12 +302,20 @@ async def link(ctx: discord.ApplicationContext, net_id):
     user = await get_user_async(username=net_id)
 
     if user is None:
-        # await ctx.respond("Your Net ID was not found in our database. If you're sure it's correct, use the `/create` command to create a new account with that Net ID.", ephemeral=True, delete_after=3.0)
+        if not settings.FEATURE_FLAGS["DISCORD_ACCOUNT_REGISTRATION"]:
+            await ctx.respond(
+                "Your Net ID was not found in our database. Contact an officer to get an account set up.",
+                ephemeral=True,
+                delete_after=3.0,
+            )
+            return
+
         await ctx.respond(
-            "Your Net ID was not found in our database. Contact an officer to get an account set up.",
+            f"We couldn't find an account for `{net_id}`. Is this your correct Net ID? "
+            "Confirm below and we'll email you a link to create your account.",
+            view=AccountCreationView(net_id, author_id),
             ephemeral=True,
-            delete_after=3.0,
-        )  # TODO
+        )
         return
 
     profile = await get_or_create_profile_async(user=user)
